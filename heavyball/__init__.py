@@ -3,8 +3,18 @@ from typing import Optional
 
 import torch
 
-from . import chainable as C
 from . import utils
+
+
+class BaseOpt:
+    """Base Optimizer for Sophia"""
+    pass
+
+class ChainOpt:
+    """Chain Optimizer for Sophia"""
+    pass
+
+from . import chainable as C # noqa F841
 
 
 class ForeachAdamW(C.BaseOpt):
@@ -256,19 +266,10 @@ class ForeachPSGDKron(C.BaseOpt):
                          functools.partial(C.scale_by_delayed_psgd if delayed else C.scale_by_psgd, cached=cached))
 
 
-def _init_hessian_estimator(state, group, update, grad, param, **kwargs):
-    """
-    Initialize Sophia's Hessian estimator state.
-    """
-    state['hessian_step'] = 0
-    state['next_hessian_update'] = 1  # Update on first step
-
-
 class ForeachSophiaH(C.BaseOpt):
     """
     Sophia optimizer with simplified diagonal Hessian estimation.
     """
-
     def __init__(self, params, lr=1e-3, betas=(0.96, 0.99), eps=1e-12, weight_decay=0.1,
                  warmup_steps=0, gamma=0.01, update_freq=10, foreach: bool = True,
                  storage_dtype: str = 'float32', mars: bool = False, caution: bool = False,
@@ -324,28 +325,28 @@ class ForeachSophiaH(C.BaseOpt):
         for param, grad in zip(p, g):
             state = self.state_(param)
 
-            # 상태 초기화
+            # Initialize Hessian's status
             if 'hessian_step' not in state:
                 state['hessian_step'] = 0
                 state['next_hessian_update'] = 1
 
-            # 스텝 증가
+            # Move to the next step
             state['hessian_step'] += 1
 
-            # 헤시안 업데이트 체크
+            # Check if hessian is updated
             if state['hessian_step'] >= state['next_hessian_update']:
                 state['next_hessian_update'] = state['hessian_step'] + k
 
-                # 간단한 GNB 방식으로 헤시안 근사
+                # Hessian approximation using simple GNB method
                 h = grad.pow(2)
 
-                # 헤시안 EMA 업데이트 (diag_hessian은 zero_guard로 초기화됨)
+                # Update hessian EMA : diag_hessian is initialized to zero_guard
                 if 'diag_hessian' in state:
                     state['diag_hessian'].mul_(beta2).add_(h, alpha=1-beta2)
                 else:
                     state['diag_hessian'] = h.clone()
 
-                # 수치 안정성을 위해 최소값 설정
+                # Set minimum value for stability
                 state['diag_hessian'].clamp_(min=1e-6)
 
         # 표준 최적화 진행
@@ -359,12 +360,10 @@ class ForeachSophiaH(C.BaseOpt):
         group['lr'] = group['prev_lr']
         group['step'] = None
 
-
 class ForeachSophiaG(ForeachSophiaH):
     """
     Sophia optimizer with Gauss-Newton-Bartlett estimator (same implementation as SophiaH for simplicity).
     """
-
     def __init__(self, params, lr=1e-3, betas=(0.96, 0.99), eps=1e-12, weight_decay=0.1,
                 warmup_steps=0, gamma=0.05, update_freq=10, foreach: bool = True,
                 storage_dtype: str = 'float32', mars: bool = False, caution: bool = False,
@@ -382,7 +381,8 @@ class ForeachSophiaG(ForeachSophiaH):
         defaults['sophia_type'] = 'g'  # Gauss-Newton-Bartlett estimator
 
         C.BaseOpt.__init__(self, params_local, defaults, foreach, gradient_clipping, update_clipping, palm,
-                        C.scale_by_sophia)
+                         C.zero_guard("diag_hessian"),
+                         C.scale_by_sophia)
 
 
     def estimate_hessian_g(self, state, group, update, grad, param):
@@ -460,7 +460,7 @@ class SophiaH(torch.optim.Optimizer):
                     state['next_hessian_update'] = state['hessian_step'] + update_freq
                     h = grad.pow(2)
                     state['diag_hessian'].mul_(beta2).add_(h, alpha=1-beta2)
-                    state['diag_hessian'].clamp_(min=1e-6)  # Minimum value for stability
+                    state['diag_hessian'].clamp_(min=1e-6)
 
                 # Weight descent
                 if weight_decay != 0:
@@ -526,4 +526,4 @@ __all__ = ["Muon", "RMSprop", "PrecondSchedulePaLMSOAP", "PSGDKron", "PurePSGD",
            "ForeachAdamW", "ForeachSFAdamW",
            "ForeachLaProp", "ForeachADOPT", "ForeachSOAP", "ForeachPSGDKron", "ForeachPurePSGD", "ForeachDelayedPSGD",
            "ForeachCachedPSGDKron", "ForeachCachedDelayedPSGDKron", "ForeachRMSprop", "ForeachMuon",
-           'ForeachCachedNewtonPSGD', 'OrthoLaProp', 'LaPropOrtho', 'SignLaProp']
+           'ForeachCachedNewtonPSGD', 'OrthoLaProp', 'LaPropOrtho', 'SignLaProp', "SophiaH", "SophiaG"]

@@ -203,7 +203,7 @@ def update_by_laprop(group, update, grad, param, exp_avg, exp_avg_sq):
                         group['step'], group['lr'], group['weight_decay'], group['caution'])
     raise SkipUpdate
 
-def _init_hessian_estimator(state, group, update, grad, param):
+def _init_hessian_estimator(state, group, update, grad, param, **kwargs):
     """Initialize Sophia's Hessian estimator state."""
     state['hessian_step'] = 0
     state['next_hessian_update'] = 1  # Update on first step
@@ -326,7 +326,7 @@ def scale_by_sophia(group, update, grad, param, exp_avg, diag_hessian):
 
     # For each parameter
     for u, m, h in zip(update, exp_avg, diag_hessian):
-        # Calculate scaled update: mt / max(γ * ht, ε)
+        # Computation for each parameters : mt / max(γ * ht, ε)
         m32 = utils.promote(m)
         h32 = utils.promote(h)
 
@@ -341,7 +341,6 @@ def scale_by_sophia(group, update, grad, param, exp_avg, diag_hessian):
         utils.copy_stochastic_(u, scaled)
 
     return update
-
 
 def _init_sophia_state(state, group, update, grad, param):
     """Initialize Sophia's Hessian state."""
@@ -363,16 +362,16 @@ def update_sophia_hessian(group, update, grad, param, diag_hessian, hessian_step
     k = group.get('sophia_update_freq', 10)
     beta2 = utils.get_beta2(group)
 
-    # hessian_step이 튜플이면 상태 값을 직접 수정
+    # Revise status value directory directly if hessian_step is tuple
     if isinstance(hessian_step, tuple):
         state = param.optimizer_state if hasattr(param, 'optimizer_state') else {}
         state['hessian_step'] = state.get('hessian_step', 0) + 1
 
-        # 다음 업데이트 시간 설정
+        # Set next update time
         if state['hessian_step'] >= state.get('next_hessian_update', 1):
             state['next_hessian_update'] = state['hessian_step'] + k
 
-            # 제곱 그라디언트로 Hessian 근사
+            # Hessian approximation using squared gradient
             h = grad.detach().pow(2)
 
             # Update EMA of diagonal Hessian
@@ -381,23 +380,22 @@ def update_sophia_hessian(group, update, grad, param, diag_hessian, hessian_step
             else:
                 state['diag_hessian'] = h.clone()
 
-            # 수치 안정성을 위해 최소값 설정
+            # Set minimum value for numerical stability
             state['diag_hessian'].clamp_(min=1e-6)
     else:
-        # 리스트 형태라면 원래대로 처리
         hessian_step[0] += 1
 
-        # 다음 업데이트 시간 체크
+        # Check if it's time to update the Hessian estimate
         if hessian_step[0] >= next_hessian_update[0]:
             next_hessian_update[0] = hessian_step[0] + k
 
-            # 제곱 그라디언트로 Hessian 근사
+            # Hessian approximation using squared gradient
             h = grad.detach().pow(2)
 
-            # Hessian EMA 업데이트
+            # Update Hessian EMA
             diag_hessian.mul_(beta2).add_(h, alpha=1-beta2)
 
-            # 수치 안정성을 위해 최소값 설정
+            # Set minimum value for numerical stability
             diag_hessian.clamp_(min=1e-6)
 
     return update
