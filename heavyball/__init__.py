@@ -412,6 +412,100 @@ class ForeachSophiaG(ForeachSophiaH):
 
         return update
 
+def _init_adalomo(state, group, update, grad, param):
+    """
+    Initialize AdaLomo optimizer state.
+
+    Sets up row sums (r_t) and column sums (c_t) matrices for the factorized second moment estimation.
+
+    Args:
+        state: Optimizer state dictionary for the parameter
+        group: Parameter group dictionary
+        update: Parameter update/gradient
+        grad: Raw gradient
+        param: Parameter tensor
+    """
+    # Original shape for reshaping if needed
+    original_shape = update.shape
+
+    # Initialize row sum matrix (r_t)
+    if len(original_shape) <= 1:
+        # For scalar or 1D tensors, r_t is just the squared gradient
+        state['r_t'] = torch.zeros_like(update)
+    else:
+        # For multi-dimensional tensors, r_t tracks row sums
+        # Shape is [original_shape[0], 1]
+        state['r_t'] = torch.zeros([original_shape[0], 1],
+                                   device=update.device,
+                                   dtype=update.dtype)
+
+    # Initialize column sum matrix (c_t)
+    if len(original_shape) <= 1:
+        # For 1D tensors, c_t is not needed (will match r_t)
+        state['c_t'] = state['r_t']
+    else:
+        # For multi-dimensional tensors, c_t tracks column sums
+        # Reshape for matrix operations - remaining dimensions flattened
+        flattened_size = original_shape[1:].numel()
+        # Shape is [1, flattened_size]
+        state['c_t'] = torch.zeros([1, flattened_size],
+                                   device=update.device,
+                                   dtype=update.dtype)
+class ForeachAdaLomo(C.BaseOpt):
+    """
+    AdaLomo: Low-memory Optimization with Adaptive Learning Rate
+
+    As described in the paper:
+    "AdaLomo: Low-memory Optimization with Adaptive Learning Rate"
+    by Kai Lv, Hang Yan, Qipeng Guo, Haijun Lv, Xipeng Qiu
+
+    AdaLomo combines:
+    1. The memory-efficient approach of LOMO (Low-Memory Optimization)
+    2. Adaptive learning rates using factorized second moments
+    3. Grouped update normalization for stability
+
+    Like LOMO, it updates parameters during the backward pass to save memory.
+    Unlike LOMO, it uses an adaptive learning rate for each parameter, improving
+    convergence while maintaining memory efficiency.
+
+    Memory usage is comparable to parameter-efficient tuning methods (PEFT),
+    while allowing full parameter update like AdamW.
+    """
+    def __init__(self, params, lr=5e-4, beta=0.99, eps=1e-8, weight_decay=0, warmup_steps=0,
+                 foreach: bool = True, storage_dtype: str = 'float32', mars: bool = False,
+                 caution: bool = False, mars_gamma: float = 0.0025,
+                 gradient_clipping: C.str_or_fn = C.use_default,
+                 update_clipping: C.str_or_fn = C.use_default, palm: bool = C.use_default):
+        """
+        Initialize AdaLomo optimizer.
+
+        Args:
+            params: iterable of parameters to optimize
+            lr: learning rate (default: 5e-4)
+            beta: coefficient for computing running averages (default: 0.99)
+            eps: term added to denominator for numerical stability (default: 1e-8)
+            weight_decay: weight decay coefficient (default: 0)
+            warmup_steps: number of warmup steps (default: 0)
+            foreach: use foreach implementation if True (default: True)
+            storage_dtype: data type for storing optimizer states (default: 'float32')
+            mars: apply MARS correction if True (default: False)
+            caution: prevent parameter updates that oppose gradients (default: False)
+            mars_gamma: MARS correction strength (default: 0.0025)
+            gradient_clipping: function or method name for gradient clipping (default: None)
+            update_clipping: function or method name for update clipping (default: None)
+            palm: use PaLM beta2 scheduler if True (default: False)
+        """
+        defaults = locals()
+        defaults.pop("self")
+        params = defaults.pop("params")
+        super().__init__(params, defaults, foreach, gradient_clipping, update_clipping, palm,
+                         C.update_by_adalomo)
+
+
+class PaLMForeachAdaLomo(ForeachAdaLomo):
+    """AdaLomo variant that uses the PaLM beta2 scheduler."""
+    palm: bool = True
+
 class SophiaH(torch.optim.Optimizer):
     """
     Sophia optimizer with Gauss-Newton-Bartlett approximation for Hessian.
@@ -519,6 +613,8 @@ Muon = ForeachMuon
 SignLaProp = ForeachSignLaProp
 SophiaH = SophiaH
 SophiaG = SophiaH
+AdaLomo = ForeachAdaLomo
+PaLMAdaLomo = PaLMForeachAdaLomo
 
 __all__ = ["Muon", "RMSprop", "PrecondSchedulePaLMSOAP", "PSGDKron", "PurePSGD", "DelayedPSGD", "CachedPSGDKron",
            "CachedDelayedPSGDKron", "PalmForEachSoap", "PaLMSOAP", "PaLMSFAdamW", "LaProp", "ADOPT",
@@ -526,4 +622,5 @@ __all__ = ["Muon", "RMSprop", "PrecondSchedulePaLMSOAP", "PSGDKron", "PurePSGD",
            "ForeachAdamW", "ForeachSFAdamW",
            "ForeachLaProp", "ForeachADOPT", "ForeachSOAP", "ForeachPSGDKron", "ForeachPurePSGD", "ForeachDelayedPSGD",
            "ForeachCachedPSGDKron", "ForeachCachedDelayedPSGDKron", "ForeachRMSprop", "ForeachMuon",
-           'ForeachCachedNewtonPSGD', 'OrthoLaProp', 'LaPropOrtho', 'SignLaProp', "SophiaH", "SophiaG"]
+           'ForeachCachedNewtonPSGD', 'OrthoLaProp', 'LaPropOrtho', 'SignLaProp', "SophiaH", "SophiaG",
+           "ForeachAdaLomo", "AdaLomo", "PaLMForeachAdaLomo", "PaLMAdaLomo"]

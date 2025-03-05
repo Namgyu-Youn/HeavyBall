@@ -1384,6 +1384,63 @@ def trust_region_clip_(grad, lerp=0.9, scale=1.5):
     return grad
 
 
+@decorator_knowngood
+def _compilable_group_update_norm_(updates: list[Tensor], params: list[Tensor], eps: Tensor):
+    """
+    Applies grouped update normalization as described in the AdaLomo paper.
+
+    For each parameter, scales the update by the RMS of the parameter
+    divided by the RMS of the update, clamping to ensure stability.
+
+    Args:
+        updates: List of parameter updates
+        params: List of parameters
+        eps: Small constant for numerical stability
+
+    Returns:
+        Normalized updates
+    """
+    u32 = list(map(promote, updates))
+    p32 = list(map(promote, params))
+
+    for u, p in zip(u32, p32):
+        # Calculate RMS values
+        u_rms = torch.sqrt(torch.mean(u * u))
+        p_rms = torch.sqrt(torch.mean(p * p))
+
+        # Calculate scaling factor:
+        # û_{t,i} = u_{t,i}/max(1, RMS(u_{t,i})) × max(ε, RMS(θ_{t-1,i}))
+        scale = torch.max(torch.tensor(1.0, device=u.device, dtype=u.dtype), u_rms)
+        norm_factor = torch.max(eps, p_rms)
+
+        # Apply normalization
+        u.div_(scale).mul_(norm_factor)
+
+    copy_stochastic_list_(updates, u32)
+    return updates
+
+
+def group_update_norm_(updates: list[Tensor], params: list[Tensor], eps: float = 1e-8):
+    """
+    Wrapper for compilable group update normalization.
+
+    This function normalizes updates with respect to parameter scale to stabilize training.
+    It is especially useful when training large language models, where gradient magnitudes
+    can vary significantly across layers.
+
+    Args:
+        updates: List of parameter updates
+        params: List of parameters
+        eps: Small constant for numerical stability
+
+    Returns:
+        Normalized updates
+    """
+    updates, params = list_guard(updates, params)
+    eps = scalar_guard(eps, updates[0])
+    return _compilable_group_update_norm_(updates, params, eps)
+
+
 @decorator
 def triu_to_line(Q_list: list[Tensor]):
     out = []
