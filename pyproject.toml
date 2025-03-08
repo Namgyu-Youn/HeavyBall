@@ -1,49 +1,41 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "heavyball"
 description = "Efficient Optimizers"
-version = "1.6.1"
-authors = [
-  {name = "HeavyBall Authors", email = "github.heavyball@nestler.sh"}
+version = "1.6.3"
+authors = [{ name = "HeavyBall Authors", email = "github.heavyball@nestler.sh" }]
+classifiers = ["Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
 ]
-classifiers = [
-  "Intended Audience :: Developers",
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: BSD-2",
-  "Natural Language :: English",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3",
+dependencies = ["opt-einsum>=3.4.0",
+    "torch>=2.1.0",
+    "numpy",
 ]
-dependencies = [
-    "opt-einsum>=3.0.0",
-    "torch>=2.0.0",
-]
-keywords = [
-  "torch",
-  "optimizer",
-  "muon",
-  "soap",
-  "psgd",
+keywords = ["torch",
+    "optimizer",
+    "muon",
+    "soap",
+    "psgd",
 ]
 readme = "README.md"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-dev = [
-  "pre-commit",
-  "pytest",
-  "ruff",
-]
+dev = ["pre-commit", "pytest", "ruff", "matplotlib", "seaborn", "hyperopt", "pandas", "typer"]
 
 [project.urls]
 source = "https://github.com/HomebrewML/HeavyBall"
 tracker = "https://github.com/HomebrewML/HeavyBall/issues"
 
 [tool.ruff]
-line-length = 99
+line-length = 120
 
 [tool.ruff.lint]
 extend-select = ["I", "W"]
