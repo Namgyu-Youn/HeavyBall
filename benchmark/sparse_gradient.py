@@ -25,7 +25,7 @@ class Model(nn.Module):
         new_mask = (torch.rand_like(self.param) < self.sparsity).float()
         mask = (new_mask + self.prev_mask) > 0  # Union of current and previous mask
         self.prev_mask.copy_(new_mask)
-        
+
         return (self.param * mask.float()).square().mean()
 
 

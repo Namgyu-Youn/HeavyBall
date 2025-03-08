@@ -177,7 +177,7 @@ class Plotter(nn.Module):
 
     def plot(self, title=None, save_path=None):
         """Create contour plot with optimization trajectory.
-        
+
         Args:
             title: Optional title for the plot
             save_path: Optional path to save the plot
