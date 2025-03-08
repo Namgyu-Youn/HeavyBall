@@ -375,8 +375,8 @@ def _compilable_scatter_set(target, source, index):
     target[:] = source.contiguous()[index].reshape_as(target)
 
 
-#@decorator_knowngood
-def get_orthogonal_matrix_QR(GG: list[Tensor], Q: list[Tensor], exp_avg: Optional[Tensor] = None):
+# @decorator_knowngood
+def get_orthogonal_matrix_QR(GG: List[Tensor], Q: List[Tensor], exp_avg: Optional[Tensor] = None):
     """
     Computes the eigenbases of the preconditioner using one round of power iteration
     followed by torch.linalg.qr decomposition, and updates exp_avg in-place from old to new eigenspace.
@@ -451,7 +451,8 @@ def get_orthogonal_matrix(mat, max_eps: float = 1e-3, min_eps: float = 1e-30):
         eps = min_eps
         while True:
             try:
-                _eigval, eigvec = torch.linalg.eigh(m + 1e-30 * torch.eye(m.shape[0], device=m.device, dtype=m.dtype))
+                eye = torch.eye(m.shape[0], device=m.device, dtype=m.dtype)
+                eigval, eigvec = torch.linalg.eigh(m + eps * eye)
                 eigvec = eigvec.to(device=device, dtype=dtype)
                 break
             except torch.OutOfMemoryError:
