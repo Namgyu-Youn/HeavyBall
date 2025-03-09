@@ -15,8 +15,8 @@ import torch
 import torch.nn as nn
 import typer
 
-from heavyball.utils import set_torch
 from benchmark.utils import param_norm_win_condition, trial
+from heavyball.utils import set_torch
 
 app = typer.Typer(pretty_exceptions_enable=False)
 set_torch()

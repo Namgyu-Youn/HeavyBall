@@ -1,19 +1,18 @@
+import subprocess
+from abc import ABC, abstractmethod
+from pathlib import Path
+
+import imageio
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-import os
-import imageio
-import heavyball
 import typer
-from typing import List, Optional, Literal
-from pathlib import Path
-import subprocess
+from torch.utils.data import DataLoader
+
+import heavyball
 from benchmark.utils import get_optim
-from torch.utils.data import TensorDataset, DataLoader
 from heavyball.utils import set_torch
-from abc import ABC, abstractmethod
 
 app = typer.Typer(pretty_exceptions_enable=False)
 set_torch()
@@ -144,7 +143,7 @@ def plot_decision_boundary(model, loader, ax, resolution, device='cuda'):
     boundaries1 = torch.cat(boundaries1, dim=0).numpy()
     boundaries2 = torch.cat(boundaries2, dim=0).numpy()
 
-    scatter = ax.scatter(X[:, 0], X[:, 1], c=y.squeeze(),
+    _scatter = ax.scatter(X[:, 0], X[:, 1], c=y.squeeze(),
                         cmap=plt.cm.RdYlBu, alpha=0.6, label='Training Data')
 
     # First layer (blue)
@@ -181,7 +180,7 @@ def main(
     output_format: str = typer.Option('mp4', help='Output format: mp4 or gif'),
     fps: int = typer.Option(10, help='Frames per second in output video'),
     seed: int = typer.Option(42, help='Random seed for reproducibility'),
-    optimizer: str = typer.Option('PrecondScheduleForeachSOAP', help=f'Optimizer to use'),
+    optimizer: str = typer.Option('PrecondScheduleForeachSOAP', help='Optimizer to use'),
     weight_decay: float = typer.Option(0.0, help='Weight decay for the optimizer'),
     beta1: float = typer.Option(0.9, help='Beta1 parameter for Adam-like optimizers'),
     beta2: float = typer.Option(0.999, help='Beta2 parameter for Adam-like optimizers'),
@@ -230,7 +229,7 @@ def main(
     criterion = nn.CrossEntropyLoss()
 
     plt.ioff()
-    fig, ax = plt.subplots(figsize=(10, 10))
+    _fig, ax = plt.subplots(figsize=(10, 10))
     frames = []
     frame_files = []
     frame_count = 0

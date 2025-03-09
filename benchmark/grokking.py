@@ -1,20 +1,21 @@
-import random
-import heavyball
-import itertools
-from typing import List
-from collections import defaultdict
 import copy
+import itertools
+import random
+from collections import defaultdict
+from pathlib import Path
+from typing import List
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.backends.opt_einsum
 import torch.nn as nn
 import typer
-from torch.utils.data import TensorDataset, DataLoader
-import matplotlib.pyplot as plt
-import numpy as np
-from pathlib import Path
+from torch.utils.data import DataLoader
 
+import heavyball
+from benchmark.utils import get_optim
 from heavyball.utils import set_torch
-from benchmark.utils import trial, get_optim
 
 app = typer.Typer(pretty_exceptions_enable=False)
 set_torch()
@@ -75,7 +76,7 @@ def evaluate(model, loader, device):
 
 def plot_results(train_losses, test_accs, steps_to_grok=None, save_path=None):
     """Plot training curves"""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    _fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
     # Plot training loss
     ax1.plot(train_losses, label='Training Loss')
