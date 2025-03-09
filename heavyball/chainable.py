@@ -500,13 +500,7 @@ def scale_by_adalomo(group, update, grad, param):
 
     # Apply grouped update normalization (per Algorithm 1, line 11)
     # û_{t,i} = u_{t,i}/max(1, RMS(u_{t,i})) × max(ε, RMS(θ_{t-1,i}))
-    u_rms = torch.sqrt(torch.mean(u_t * u_t))
-    param_rms = torch.sqrt(torch.mean(param * param))
-
-    scale_factor = u_rms.clamp(min=1.0)
-    norm_factor = param_rms.clamp(min=eps)
-
-    u_norm = u_t / scale_factor * norm_factor
+    u_norm = utils.group_update_norm_([u_t], [param], eps)[0]
 
     # Copy the result back to update
     copy_stochastic_(update, u_norm)
