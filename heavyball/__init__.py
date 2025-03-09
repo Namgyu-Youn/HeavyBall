@@ -3,18 +3,8 @@ from typing import Optional
 
 import torch
 
+from . import chainable as C
 from . import utils
-
-
-class BaseOpt:
-    """Base Optimizer for Sophia"""
-    pass
-
-class ChainOpt:
-    """Chain Optimizer for Sophia"""
-    pass
-
-from . import chainable as C # noqa F841
 
 
 class ForeachAdamW(C.BaseOpt):
@@ -349,7 +339,7 @@ class ForeachSophiaH(C.BaseOpt):
                 # Set minimum value for stability
                 state['diag_hessian'].clamp_(min=1e-6)
 
-        # 표준 최적화 진행
+        # Process standard initialization
         if not group['foreach'] or len(p) == 1:
             for param, grad in zip(p, g):
                 C.chain(self.state_, group, [grad], [param], *self.fns)
@@ -412,45 +402,6 @@ class ForeachSophiaG(ForeachSophiaH):
 
         return update
 
-def _init_adalomo(state, group, update, grad, param):
-    """
-    Initialize AdaLomo optimizer state.
-
-    Sets up row sums (r_t) and column sums (c_t) matrices for the factorized second moment estimation.
-
-    Args:
-        state: Optimizer state dictionary for the parameter
-        group: Parameter group dictionary
-        update: Parameter update/gradient
-        grad: Raw gradient
-        param: Parameter tensor
-    """
-    # Original shape for reshaping if needed
-    original_shape = update.shape
-
-    # Initialize row sum matrix (r_t)
-    if len(original_shape) <= 1:
-        # For scalar or 1D tensors, r_t is just the squared gradient
-        state['r_t'] = torch.zeros_like(update)
-    else:
-        # For multi-dimensional tensors, r_t tracks row sums
-        # Shape is [original_shape[0], 1]
-        state['r_t'] = torch.zeros([original_shape[0], 1],
-                                   device=update.device,
-                                   dtype=update.dtype)
-
-    # Initialize column sum matrix (c_t)
-    if len(original_shape) <= 1:
-        # For 1D tensors, c_t is not needed (will match r_t)
-        state['c_t'] = state['r_t']
-    else:
-        # For multi-dimensional tensors, c_t tracks column sums
-        # Reshape for matrix operations - remaining dimensions flattened
-        flattened_size = original_shape[1:].numel()
-        # Shape is [1, flattened_size]
-        state['c_t'] = torch.zeros([1, flattened_size],
-                                   device=update.device,
-                                   dtype=update.dtype)
 class ForeachAdaLomo(C.BaseOpt):
     """
     AdaLomo: Low-memory Optimization with Adaptive Learning Rate

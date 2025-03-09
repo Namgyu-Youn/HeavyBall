@@ -213,7 +213,7 @@ def _init_hessian_estimator(state, group, update, grad, param, **kwargs):
 @no_state_no_foreach
 def estimate_hessian_h(group, update, grad, param):
     """Estimate diagonal Hessian using Hutchinson's method."""
-    state = param.optimizer_state if hasattr(param, 'optimizer_state') else {}
+    state = getattr(param, 'optimizer_state', {})
     k = group.get('sophia_update_freq', 10)
     beta2 = utils.get_beta2(group)
 
@@ -254,35 +254,6 @@ def _hutchinson_hessian(state, param, grad):
     return grad * grad
 
 
-def _update_hessian(state, group, grad, param):
-    """Update Hessian estimate in optimizer state."""
-    k = group.get('sophia_update_freq', 10)
-    beta2 = utils.get_beta2(group)
-
-    # Initialize or increment step counter
-    state['hessian_step'] = state.get('hessian_step', 0) + 1
-    next_update = state.get('next_hessian_update', 1)
-
-    # Check if it's time to update Hessian
-    if state['hessian_step'] >= next_update:
-        state['next_hessian_update'] = state['hessian_step'] + k
-
-        # Compute Hessian estimate based on the type
-        if group.get('sophia_type', 'h') == 'h':
-            # Hutchinson's estimator
-            h = _hutchinson_hessian(state, param, grad)
-        else:
-            # Gauss-Newton-Bartlett estimator
-            h = grad * grad  # Simplified GNB estimator
-
-        # Update EMA of diagonal Hessian
-        if 'diag_hessian' in state:
-            state['diag_hessian'].mul_(beta2).add_(h, alpha=1-beta2)
-        else:
-            state['diag_hessian'] = h.clone()
-
-        # Ensure positive values for numerical stability
-        state['diag_hessian'].clamp_(min=1e-6)
 
 @general_guard(["diag_hessian", "hessian_step", "next_hessian_update"], init_fn=_init_hessian_estimator, skip_first=False)
 @no_state
@@ -310,6 +281,7 @@ def estimate_hessian_g(state, group, update, grad, param):
 
     return update
 
+
 @zero_guard("exp_avg", "diag_hessian")
 @no_state
 def scale_by_sophia(group, update, grad, param, exp_avg, diag_hessian):
@@ -336,7 +308,7 @@ def scale_by_sophia(group, update, grad, param, exp_avg, diag_hessian):
 
         # Scale and clip the update
         scaled = m32 / denom
-        torch.clamp_(scaled, min=-1.0, max=1.0, out=scaled)
+        scaled.clamp_(min=-1.0, max=1.0)
 
         # Copy back to update
         utils.copy_stochastic_(u, scaled)
@@ -350,7 +322,7 @@ def _init_sophia_state(state, group, update, grad, param):
 
     # Initialize diagonal Hessian with squared gradient (simple approximation)
     # Both SophiaH and SophiaG will start with this approximation
-    state['diag_hessian'] = grad.detach().pow(2).clone()
+    state['diag_hessian'] = (grad.detach() * grad.detach()).clone()
 
 def _init_adalomo(state, group, update, grad, param):
     """
@@ -395,7 +367,7 @@ def _init_adalomo(state, group, update, grad, param):
 
 @general_guard("r_t", "c_t", init_fn=_init_adalomo)
 @no_state_no_foreach
-def update_by_adalomo(group, update, grad, param, *args):
+def update_by_adalomo(group, update, grad, param, r_t, c_t):
     """
     Fused implementation of AdaLomo that directly updates parameters.
     This follows Algorithm 1 from the paper and combines all steps
@@ -405,15 +377,6 @@ def update_by_adalomo(group, update, grad, param, *args):
     eps = group.get('eps', 1e-8)
     lr = group.get('lr', 0.001)
     weight_decay = group.get('weight_decay', 0)
-
-    # Get the state for this parameter
-    state = param.optimizer_state if hasattr(param, 'optimizer_state') else {}
-
-    if 'r_t' not in state:
-        _init_adalomo(state, group, update, grad, param)
-
-    r_t = state['r_t']
-    c_t = state['c_t']
 
     # Promote to higher precision for calculations
     g32 = promote(update)
@@ -456,26 +419,15 @@ def update_by_adalomo(group, update, grad, param, *args):
     u_t = g32 / denom
 
     # Apply grouped update normalization
-    u_rms = torch.sqrt(torch.mean(u_t * u_t))
-    param_rms = torch.sqrt(torch.mean(p32 * p32))
-
-    scale_factor = torch.max(torch.tensor(1.0, device=u_rms.device, dtype=u_rms.dtype), u_rms)
-    norm_factor = torch.max(torch.tensor(eps, device=param_rms.device, dtype=param_rms.dtype), param_rms)
-
-    u_norm = u_t / scale_factor * norm_factor
+    u_norm = utils.group_update_norm_([u_t], [p32], eps)[0]
 
     # Apply weight decay and update parameters
-    if weight_decay != 0:
-        p32.mul_(1 - lr * weight_decay)
-
     # Update parameters: θ_t = θ_t-1 - α_t * û_t
-    p32.add_(u_norm, alpha=-lr)
-
-    # Copy back to parameter
-    copy_stochastic_(param, p32)
+    utils.update_param_([param], [u_norm], lr, weight_decay, caution=group.get('caution', False), grad=[grad])
 
     # Store the state
-    param.optimizer_state = state
+    if hasattr(param, 'optimizer_state'):
+        param.optimizer_state = {'r_t': r_t, 'c_t': c_t}
 
     return update
 
@@ -551,8 +503,8 @@ def scale_by_adalomo(group, update, grad, param):
     u_rms = torch.sqrt(torch.mean(u_t * u_t))
     param_rms = torch.sqrt(torch.mean(param * param))
 
-    scale_factor = torch.max(torch.tensor(1.0, device=u_rms.device, dtype=u_rms.dtype), u_rms)
-    norm_factor = torch.max(torch.tensor(eps, device=param_rms.device, dtype=param_rms.dtype), param_rms)
+    scale_factor = u_rms.clamp(min=1.0)
+    norm_factor = param_rms.clamp(min=eps)
 
     u_norm = u_t / scale_factor * norm_factor
 
@@ -585,8 +537,7 @@ def update_sophia_hessian(group, update, grad, param, diag_hessian, hessian_step
             state['next_hessian_update'] = state['hessian_step'] + k
 
             # Hessian approximation using squared gradient
-            h = grad.detach().pow(2)
-
+            h = (grad.detach() * grad.detach())
             # Update EMA of diagonal Hessian
             if 'diag_hessian' in state:
                 state['diag_hessian'].mul_(beta2).add_(h, alpha=1-beta2)
@@ -603,7 +554,7 @@ def update_sophia_hessian(group, update, grad, param, diag_hessian, hessian_step
             next_hessian_update[0] = hessian_step[0] + k
 
             # Hessian approximation using squared gradient
-            h = grad.detach().pow(2)
+            h = (grad.detach() * grad.detach())
 
             # Update Hessian EMA
             diag_hessian.mul_(beta2).add_(h, alpha=1-beta2)
